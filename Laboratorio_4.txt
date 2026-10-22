@@ -1,0 +1,106 @@
+Laboratorio 4
+
+Paso 1:
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kt --create --topic "$TOPIC" --partitions 6 --replication-factor 3    --config cleanup.policy=compact --config min.insync.replicas=2 --config segment.bytes=1048576
+WARNING: Due to limitations in metric names, topics with a period ('.') or underscore ('_') could collide. To avoid issues it is best to use either, but not both.
+Created topic equipo02.lab04-est1.auditoria.acceso.
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kt --describe --topic "$TOPIC" | head -1
+Topic: equipo02.lab04-est1.auditoria.acceso     TopicId: 1Re23bICT9y0MvzrHG76AQ PartitionCount: 6       ReplicationFactor: 3       Configs: min.insync.replicas=2,cleanup.policy=compact,segment.bytes=1048576,unclean.leader.election.enable=false
+
+Paso 2:
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kc --alter --entity-type topics --entity-name "$TOPIC" --add-config delete.retention.ms=60000,min.compaction.lag.ms=10000
+Completed updating config for topic equipo02.lab04-est1.auditoria.acceso.
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kc --describe --entity-type topics --entity-name "$TOPIC"
+Dynamic configs for topic equipo02.lab04-est1.auditoria.acceso are:
+  cleanup.policy=compact sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:cleanup.policy=compact, DEFAULT_CONFIG:log.cleanup.policy=delete}
+  delete.retention.ms=60000 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:delete.retention.ms=60000, DEFAULT_CONFIG:log.cleaner.delete.retention.ms=86400000}
+  min.compaction.lag.ms=10000 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:min.compaction.lag.ms=10000, DEFAULT_CONFIG:log.cleaner.min.compaction.lag.ms=0}
+  min.insync.replicas=2 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:min.insync.replicas=2, STATIC_BROKER_CONFIG:min.insync.replicas=2, DEFAULT_CONFIG:min.insync.replicas=1}
+  segment.bytes=1048576 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:segment.bytes=1048576, DEFAULT_CONFIG:log.segment.bytes=1073741824}
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kc --alter --entity-type topics --entity-name "$TOPIC" --delete-config min.compaction.lag.ms
+Completed updating config for topic equipo02.lab04-est1.auditoria.acceso.
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kc --describe --entity-type topics --entity-name "$TOPIC"
+Dynamic configs for topic equipo02.lab04-est1.auditoria.acceso are:
+  cleanup.policy=compact sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:cleanup.policy=compact, DEFAULT_CONFIG:log.cleanup.policy=delete}
+  delete.retention.ms=60000 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:delete.retention.ms=60000, DEFAULT_CONFIG:log.cleaner.delete.retention.ms=86400000}
+  min.insync.replicas=2 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:min.insync.replicas=2, STATIC_BROKER_CONFIG:min.insync.replicas=2, DEFAULT_CONFIG:min.insync.replicas=1}
+  segment.bytes=1048576 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:segment.bytes=1048576, DEFAULT_CONFIG:log.segment.bytes=1073741824}
+
+Paso 3:
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kc --alter --entity-type clients --entity-name gen-facturacion --add-config producer_byte_rate=1048576
+Completed updating config for client gen-facturacion.
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kc --describe --entity-type clients --entity-name gen-facturacion
+Quota configs for client-id 'gen-facturacion' are producer_byte_rate=1048576.0
+
+Paso 4:
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ time python3 gen_eventos.py --topic dian.facturacion.emitida --n 20000
+enviados: 20000
+
+real    0m5.731s
+user    0m1.468s
+sys     0m0.204s
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ time python3 gen_eventos.py --topic dian.factu
+racion.emitida --n 20000
+enviados: 20000
+
+real    0m1.712s
+user    0m1.362s
+sys     0m0.137s
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ time python3 gen_eventos.py --topic dian.factu
+racion.emitida --n 20000 --client-id sin-cuota
+enviados: 20000
+
+real    0m1.431s
+user    0m1.279s
+sys     0m0.130s
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kc --alter --entity-type clients --entity-name gen-facturacion --delete-config producer_byte_rate
+Completed updating config for client gen-facturacion.
+
+Paso 5:
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ time python3 gen_eventos.py --topic dian.facturacion.emitida --n 20000 --client-id sin-cuota
+enviados: 20000
+
+real    0m1.312s
+user    0m1.218s
+sys     0m0.117s
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-log-dirs.sh --bootstrap-server broker1:19092 --describe --broker-list 1,2,3 --topic-list dian.facturacion.emitida | tail -1 | python3 -m json.tool | grep -E '"partition"|"size"' | head -12
+                            "partition": "dian.facturacion.emitida-5",
+                            "size": 8671832,
+                            "partition": "dian.facturacion.emitida-4",
+                            "size": 9135765,
+                            "partition": "dian.facturacion.emitida-1",
+                            "size": 8869277,
+                            "partition": "dian.facturacion.emitida-0",
+                            "size": 8039866,
+                            "partition": "dian.facturacion.emitida-3",
+                            "size": 9310839,
+                            "partition": "dian.facturacion.emitida-2",
+                            "size": 8372233,
+
+Paso 6:
+
+[2026-10-22 15:33:35,578] ERROR Error when sending message to topic topic.que.no.existe with key: null, value: 1 bytes with error: (org.apache.kafka.clients.producer.internals.ErrorLoggingCallback)
+org.apache.kafka.common.errors.TimeoutException: Topic topic.que.no.existe not present in metadata after 60000 ms.
+Caused by: org.apache.kafka.common.errors.UnknownTopicOrPartitionException: This server does not host this topic-partition.
+no se creó: correcto
+
+¿qué parámetro habría que cambiar, en qué nivel y con qué herramienta, para que la retención de dian.facturacion.emitida pase a 45 días sin reiniciar?
+Para aumentar la retención de un tópico a 45 días sin reiniciar Kafka, se debe la configuración dinámica del tópico en el paso dos con el siguiente comando cambiando el retention.ms:
+
+kc --alter entity-type topics --entity-name "$TOPIC" --add-config retention.ms=3888000000,delete.retention.ms=60000,min.compaction.lag.ms=10000
+
+¿Por qué la cuota no produce errores en el cliente sino solo lentitud?
+Porque el servicio no se cae sino que espera para continuar ejecutando, buscando con esto que el cliente no siga enviando solicitudes para lo mismo y qe el canal de comunicación no se sature.
+
+¿por qué en AWS compartido usamos topics con prefijo por equipo?
+Por razones de organización, gobierno y seguridad.
