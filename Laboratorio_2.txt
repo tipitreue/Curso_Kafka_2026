@@ -98,8 +98,6 @@ equipo02est1-lab02-lector equipo02est1.lab02.declaracion.presentada 1          1
 
 Paso 7:
 
-Paso 7:
-
 (1) Productor
     |
     | bootstrap.servers
