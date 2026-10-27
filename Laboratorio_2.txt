@@ -1,0 +1,143 @@
+Informe laboratorio 2
+
+Paso 2:
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kq describe --status
+ClusterId:              dian-kafka-lab-2026
+LeaderId:               3
+LeaderEpoch:            17
+HighWatermark:          59409
+MaxFollowerLag:         0
+MaxFollowerLagTimeMs:   483
+CurrentVoters:          [{"id": 1, "directoryId": null, "endpoints": ["CONTROLLER://broker1:9093"]}, {"id": 2, "directoryId": null, "endpoints": ["CONTROLLER://broker2:9093"]}, {"id": 3, "directoryId": null, "endpoints": ["CONTROLLER://broker3:9093"]}]
+CurrentObservers:       []
+
+LeaderId: 3
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kq describe --replication
+NodeId  DirectoryId             LogEndOffset    Lag     LastFetchTimestamp      LastCaughtUpTimestamp   Status  
+3       AAAAAAAAAAAAAAAAAAAAAA  59581           0       1792075077615           1792075077615           Leader  
+1       AAAAAAAAAAAAAAAAAAAAAA  59581           0       1792075077449           1792075077449           Follower
+2       AAAAAAAAAAAAAAAAAAAAAA  59581           0       1792075077449           1792075077449           Follower
+
+Paso 4:
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kt --create --topic "$TOPIC" --partitions 3 --replication-factor 3
+docker exec broker1 /opt/kafka/bin/kafka-dump-log.sh --cluster-metadata-decoder \
+  --files /var/lib/kafka/data/__cluster_metadata-0/00000000000000000000.log | grep -A3 "$TOPIC" | head -20
+WARNING: Due to limitations in metric names, topics with a period ('.') or underscore ('_') could collide. To avoid issues it is best to use either, but not both.
+Created topic equipo02est1.lab02.declaracion.presentada.
+Exception in thread "main" java.nio.file.NoSuchFileException: /var/lib/kafka/data/__cluster_metadata-0/00000000000000000000.log
+        at java.base/sun.nio.fs.UnixException.translateToIOException(Unknown Source)
+        at java.base/sun.nio.fs.UnixException.rethrowAsIOException(Unknown Source)
+        at java.base/sun.nio.fs.UnixException.rethrowAsIOException(Unknown Source)
+        at java.base/sun.nio.fs.UnixFileSystemProvider.newFileChannel(Unknown Source)
+        at java.base/java.nio.channels.FileChannel.open(Unknown Source)
+        at java.base/java.nio.channels.FileChannel.open(Unknown Source)
+        at org.apache.kafka.common.record.FileRecords.openChannel(FileRecords.java:474)
+        at org.apache.kafka.common.record.FileRecords.open(FileRecords.java:429)
+        at kafka.tools.DumpLogSegments$.dumpLog(DumpLogSegments.scala:279)
+        at kafka.tools.DumpLogSegments$.$anonfun$main$1(DumpLogSegments.scala:79)
+        at kafka.tools.DumpLogSegments$.$anonfun$main$1$adapted(DumpLogSegments.scala:70)
+        at scala.collection.ArrayOps$.foreach$extension(ArrayOps.scala:1323)
+        at kafka.tools.DumpLogSegments$.main(DumpLogSegments.scala:70)
+        at kafka.tools.DumpLogSegments.main(DumpLogSegments.scala)
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kt --describe --topic "$TOPIC"
+Topic: equipo02est1.lab02.declaracion.presentada        TopicId: 4Oql0W7sSwWuITHMyIO9-Q PartitionCount: 3       ReplicationFactor: 3    Configs: min.insync.replicas=2,unclean.leader.election.enable=false
+        Topic: equipo02est1.lab02.declaracion.presentada        Partition: 0    Leader: 3       Replicas: 3,1,2 Isr: 3,1,2      Elr:    LastKnownElr: 
+        Topic: equipo02est1.lab02.declaracion.presentada        Partition: 1    Leader: 1       Replicas: 1,2,3 Isr: 1,2,3      Elr:    LastKnownElr: 
+        Topic: equipo02est1.lab02.declaracion.presentada        Partition: 2    Leader: 2       Replicas: 2,3,1 Isr: 2,3,1      Elr:    LastKnownElr: 
+
+Paso 5:
+
+LeaderId: 3
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ CONTROLADOR=3
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ BROKER_VIVO=1
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ date +%T
+14:49:03
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker stop broker$CONTROLADOR
+broker3
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker$BROKER_VIVO /opt/kafka/bin/kafka-metadata-quorum.sh \
+  --bootstrap-server broker$BROKER_VIVO:19092 describe --status
+ClusterId:              dian-kafka-lab-2026
+LeaderId:               1
+LeaderEpoch:            18
+HighWatermark:          61096
+MaxFollowerLag:         61097
+MaxFollowerLagTimeMs:   -1
+CurrentVoters:          [{"id": 1, "directoryId": null, "endpoints": ["CONTROLLER://broker1:9093"]}, {"id": 2, "directoryId": null, "endpoints": ["CONTROLLER://broker2:9093"]}, {"id": 3, "directoryId": null, "endpoints": ["CONTROLLER://broker3:9093"]}]
+CurrentObservers:       []
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ date +%T
+14:49:40
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker$BROKER_VIVO /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server broker$BROKER_VIVO:19092 --describe \
+  --topic "$TOPIC"
+Topic: equipo02est1.lab02.declaracion.presentada        TopicId: 4Oql0W7sSwWuITHMyIO9-Q PartitionCount: 3       ReplicationFactor: 3    Configs: min.insync.replicas=2,unclean.leader.election.enable=false
+        Topic: equipo02est1.lab02.declaracion.presentada        Partition: 0    Leader: 1       Replicas: 3,1,2 Isr: 1,2        Elr:    LastKnownElr: 
+        Topic: equipo02est1.lab02.declaracion.presentada        Partition: 1    Leader: 1       Replicas: 1,2,3 Isr: 1,2        Elr:    LastKnownElr: 
+        Topic: equipo02est1.lab02.declaracion.presentada        Partition: 2    Leader: 2       Replicas: 2,3,1 Isr: 2,1        Elr:    LastKnownElr:
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker1:19092 \
+  --topic "$TOPIC" --from-beginning --timeout-ms 8000 \
+  --property print.key=true --property print.partition=true --property print.offset=true 2>/dev/null
+Partition:2     Offset:0        830001  {"nit":"830001","formulario":"110","periodo":"2026-08"}
+Partition:2     Offset:1        830001  {"nit":"830001","formulario":"300","periodo":"2026-08"}
+Partition:1     Offset:0        900123  {"nit":"900123","formulario":"110","periodo":"2026-08"}
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker1:19092 \
+  --topic "$TOPIC" --from-beginning --group "${EQUIPO}-lab02-lector" --timeout-ms 8000 2>/dev/null >/dev/null
+docker exec broker1 /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server broker1:19092 --describe --group "${EQUIPO}-lab02-lector"
+
+Consumer group 'equipo02est1-lab02-lector' has no active members.
+
+GROUP                     TOPIC                                     PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID     HOST            CLIENT-ID
+equipo02est1-lab02-lector equipo02est1.lab02.declaracion.presentada 0          0               0               0               -               -               -
+equipo02est1-lab02-lector equipo02est1.lab02.declaracion.presentada 2          2               2               0               -               -               -
+equipo02est1-lab02-lector equipo02est1.lab02.declaracion.presentada 1          1               1               0               -  
+
+Paso 7:
+
+Paso 7:
+
+(1) Productor
+    |
+    | bootstrap.servers
+    | metadata.max.age.ms
+    v
+(2) Descubre líder y calcula partición
+    |
+    | key.serializer
+    | partitioner.class
+    v
+(3) Buffer y lote
+    |
+    | batch.size
+    | linger.ms
+    | compression.type
+    v
+(4) Broker líder escribe en el log
+    |
+    | log.segment.bytes
+    v
+(5) Réplicas sincronizan
+    |
+    | replication.factor=3
+    | min.insync.replicas=2
+    | replica.lag.time.max.ms
+    v
+(6) ACK al productor
+    |
+    | acks
+    v
+(7) Consumidor lee y registra offset
+    |
+    | group.id
+    | auto.offset.reset
+    | enable.auto.commit
+    v
+Offsets almacenados en el grupo
+equipo02est1-lab02-lector
+
+6. KRaft simplifica la operación frente a ZooKeeper porque elimina un sistema distribuido adicional, reduce la infraestructura a administrar, disminuye los puntos de falla, centraliza los metadatos dentro de Kafka, facilita el escalamiento y acelera la recuperación ante fallos. Para una entidad como la DIAN, que procesa grandes volúmenes de documentos y requiere alta disponibilidad, esto se traduce en una plataforma más simple y fácil de operar.
+
