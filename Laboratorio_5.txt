@@ -1,0 +1,180 @@
+Informe laboratorio 5
+
+Tabla del paso 2 y matriz del paso 3 con tamaño en disco y CPU del equipo.
+
+Paso 1
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 productor_facturacion.py --topic "$TOP
+IC" --n 2000 --acks all
+acks=all linger=0 compression=none idempotence=False -> 2000 eventos en 4.58s = 437 ev/s, errores=0
+
+Paso 2
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ for a in 0 1 all; do python3 productor_factura
+cion.py --topic "$TOPIC" --n 20000 --acks $a; done
+acks=0 linger=0 compression=none idempotence=False -> 20000 eventos en 2.41s = 8285 ev/s, errores=0
+acks=1 linger=0 compression=none idempotence=False -> 20000 eventos en 10.33s = 1936 ev/s, errores=0
+acks=all linger=0 compression=none idempotence=False -> 20000 eventos en 24.22s = 826 ev/s, errores=0
+
+Paso 3
+## Paso 2: acks
+| acks | ev/s  |
+|  --- | ----- |
+|   0  | 10584 |
+|   1  | 3646  |
+|  all | 594   |
+
+## Paso 3: linger.ms × compression.type (acks=all)
+| linger.ms | compression | ev/s |
+|-----------|-------------|------|
+|     0     |     none    |  548 |
+|     0     |    snappy   |  634 |
+|     0     |      zstd   |  937 |
+|    20     |      none   | 9947 |
+|    20     |    snappy   | 8672 |
+|    20     |      zstd   |18467 |
+|   100     |      none   |16500 |
+|   100     |    snappy   |21134 |
+|   100     |      zstd   |15677 |
+
+Tamaño en disco por combinación: docker exec broker1 du -sh /var/lib/kafka/data/equipo02.lab05-est1.facturacion.emitida-*
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 du -sh /var/lib/kafka/data/
+236M    /var/lib/kafka/data/
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 sh -c 'du -sh /var/lib/kafka/data/"$1"-*' sh "$TOPIC"
+22M     /var/lib/kafka/data/equipo02.lab05-est1.facturacion.emitida-0
+22M     /var/lib/kafka/data/equipo02.lab05-est1.facturacion.emitida-1
+22M     /var/lib/kafka/data/equipo02.lab05-est1.facturacion.emitida-2
+22M     /var/lib/kafka/data/equipo02.lab05-est1.facturacion.emitida-3
+22M     /var/lib/kafka/data/equipo02.lab05-est1.facturacion.emitida-4
+22M     /var/lib/kafka/data/equipo02.lab05-est1.facturacion.emitida-5
+
+Análisis: ¿qué combinación elegiría para ingesta masiva de facturación y cuál para un flujo de alertas? Justifique con sus cifras.
+
+Para una ingesta masiva de facturación, elegiría la combinación acks=all, linger.ms=100 y compresión snappy, ya que fue la que obtuvo el mayor rendimiento: 21.134 eventos/segundo. Aunque acks=all es la opción más lenta cuando no se realiza batching (594 ev/s en las pruebas iniciales), al aumentar linger.ms se aprovecha el envío por lotes y el rendimiento mejora drásticamente. Además, acks=all ofrece la mayor garantía de durabilidad porque el líder espera la confirmación de todas las réplicas en el ISR antes de confirmar la escritura al productor.
+
+Para un flujo de alertas, elegiría acks=1 y linger.ms=0. En este tipo de aplicaciones la prioridad suele ser la baja latencia, es decir, que el mensaje llegue lo más rápido posible al consumidor. Aunque acks=0 alcanza más rendimiento (10.584 ev/s), no ofrece garantía de recepción porque el productor no espera ninguna confirmación. En cambio, acks=1 mantiene un equilibrio razonable entre velocidad y confiabilidad
+
+Paso 4
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server broker1:19092 --describe --topic "$TOPIC"
+Topic: equipo02.lab05-est1.facturacion.emitida  TopicId: Suh3zIfmQQS_1AitJ-v8gA PartitionCount: 6       ReplicationFactor: 3       Configs: min.insync.replicas=2,unclean.leader.election.enable=false
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 0    Leader: 2       Replicas: 2,3,1 Isr: 2,3,1      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 1    Leader: 3       Replicas: 3,1,2 Isr: 3,1,2      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 2    Leader: 1       Replicas: 1,2,3 Isr: 1,2,3      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 3    Leader: 3       Replicas: 3,1,2 Isr: 3,1,2      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 4    Leader: 1       Replicas: 1,2,3 Isr: 1,2,3      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 5    Leader: 2       Replicas: 2,3,1 Isr: 2,3,1      Elr:       LastKnownElr:
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 productor_facturacion.py --topic "$TOP
+IC" --n 200000 --acks all --linger 20
+acks=all linger=20 compression=none idempotence=False -> 200000 eventos en 10.86s = 18414 ev/s, errores=0
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker stop broker2
+broker2
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 productor_facturacion.py --topic "$TOP
+IC" --n 200000 --acks all --linger 20
+%6|1793287727.940|FAIL|lab05-productor#producer-1| [thrd:localhost:9094/2]: localhost:9094/2: Disconnected: connection closed by peer: receive 0 after POLLIN (after 8075ms in state UP)
+%6|1793287727.942|FAIL|lab05-productor#producer-1| [thrd:localhost:9094/2]: localhost:9094/2: Disconnected: connection closed by peer: receive 0 after POLLIN (after 0ms in state APIVERSION_QUERY, 1 identical error(s) suppressed)
+acks=all linger=20 compression=none idempotence=False -> 200000 eventos en 14.63s = 13666 ev/s, errores=0
+
+Errores observados en el paso 4 y comportamiento del cliente.
+Después de detener broker2, el productor mostró mensajes de error de conexión. Estos errores indican que el cliente intentó comunicarse con un broker que ya no estaba disponible. Sin embargo, el productor no terminó la ejecución ni perdió la conectividad con el clúster, sino que utilizó la información de metadatos para reenviar las solicitudes a los líderes disponibles de cada partición y terminó la publicación de los 200.000 eventos con 0 errores.
+
+Paso 5
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ TOPIC_IDEM=$EQUIPO.lab05-est1.idem
+docker exec broker1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker1:19092 --topic "$TOPIC_IDEM" --from-
+beginning --timeout-ms 20000 2>/dev/null \
+  | python3 -c "import sys,json; ids=[json.loads(l)['id_evento'] for l in sys.stdin if l.strip()]; print('total',len(ids),'
+unicos',len(set(ids)))"
+total 0 unicos 0
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server broker1:19092 --describe --topic "$TOPIC"
+Topic: equipo02.lab05-est1.facturacion.emitida  TopicId: Suh3zIfmQQS_1AitJ-v8gA PartitionCount: 6       ReplicationFactor: 3       Configs: min.insync.replicas=2,unclean.leader.election.enable=false
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 0    Leader: 2       Replicas: 2,3,1 Isr: 3,2,1      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 1    Leader: 3       Replicas: 3,1,2 Isr: 3,2,1      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 2    Leader: 2       Replicas: 1,2,3 Isr: 3,2,1      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 3    Leader: 3       Replicas: 3,1,2 Isr: 3,2,1      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 4    Leader: 2       Replicas: 1,2,3 Isr: 3,2,1      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 5    Leader: 2       Replicas: 2,3,1 Isr: 3,2,1      Elr:       LastKnownElr: 
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 productor_facturacion.py --topic "$TOP
+IC" --n 200000 --acks all --linger 20 --idempotence
+%4|1793120464.673|GETPID|lab05-productor#producer-1| [thrd:main]: Failed to acquire idempotence PID from broker localhost:9092/1: Broker: Coordinator load in progress: retrying
+acks=all linger=20 compression=none idempotence=True -> 200000 eventos en 22.70s = 8812 ev/s, errores=0
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server broker1:19092 --describe --topic "$TOPIC"
+Topic: equipo02.lab05-est1.facturacion.emitida  TopicId: Suh3zIfmQQS_1AitJ-v8gA PartitionCount: 6       ReplicationFactor: 3       Configs: min.insync.replicas=2,unclean.leader.election.enable=false
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 0    Leader: 2       Replicas: 2,3,1 Isr: 3,2,1      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 1    Leader: 3       Replicas: 3,1,2 Isr: 3,2,1      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 2    Leader: 1       Replicas: 1,2,3 Isr: 3,2,1      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 3    Leader: 3       Replicas: 3,1,2 Isr: 3,2,1      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 4    Leader: 1       Replicas: 1,2,3 Isr: 3,2,1      Elr:       LastKnownElr: 
+        Topic: equipo02.lab05-est1.facturacion.emitida  Partition: 5    Leader: 2       Replicas: 2,3,1 Isr: 3,2,1      Elr:       LastKnownElr: 
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker stop broker2
+broker2
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 productor_facturacion.py --topic "$TOPIC" --n 200000 --acks all --linger 20 --idempotence
+acks=all linger=20 compression=none idempotence=True -> 200000 eventos en 14.54s = 13759 ev/s, errores=0
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker1:19092 --topic "$TOPIC_IDEM" --from-beginning --timeout-ms 20000 2>/dev/null \
+  | python3 -c "import sys,json; ids=[json.loads(l)['id_evento'] for l in sys.stdin if l.strip()]; print('total',len(ids),'unicos',len(set(ids)))"
+total 0 unicos 0
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server broker1:19092 \
+  --create --topic "$TOPIC_IDEM" --partitions 6 --replication-factor 3 --config min.insync.replicas=2
+WARNING: Due to limitations in metric names, topics with a period ('.') or underscore ('_') could collide. To avoid issues it is best to use either, but not both.
+Created topic equipo02.lab05.idem.
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server broker1:19092 --describe --topic "$TOPIC_IDEM"
+Topic: equipo02.lab05.idem      TopicId: tfqFCQCrSmWacnD8Kzfr3g PartitionCount: 6       ReplicationFactor: 3    Configs: min.insync.replicas=2,unclean.leader.election.enable=false
+        Topic: equipo02.lab05.idem      Partition: 0    Leader: 1       Replicas: 1,2,3 Isr: 1,2,3      Elr:    LastKnownElr: 
+        Topic: equipo02.lab05.idem      Partition: 1    Leader: 2       Replicas: 2,3,1 Isr: 2,3,1      Elr:    LastKnownElr: 
+        Topic: equipo02.lab05.idem      Partition: 2    Leader: 3       Replicas: 3,1,2 Isr: 3,1,2      Elr:    LastKnownElr: 
+        Topic: equipo02.lab05.idem      Partition: 3    Leader: 1       Replicas: 1,2,3 Isr: 1,2,3      Elr:    LastKnownElr: 
+        Topic: equipo02.lab05.idem      Partition: 4    Leader: 2       Replicas: 2,3,1 Isr: 2,3,1      Elr:    LastKnownElr: 
+        Topic: equipo02.lab05.idem      Partition: 5    Leader: 3       Replicas: 3,1,2 Isr: 3,1,2      Elr:    LastKnownEl
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 productor_facturacion.py --topic "$TOPIC_IDEM" --n 200000 --acks all --linger 20 --idempotence
+acks=all linger=20 compression=none idempotence=True -> 200000 eventos en 12.00s = 16663 ev/s, errores=0
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker stop broker1
+broker1
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 productor_facturacion.py --topic "$TOPIC_IDEM" --n 200000 --acks all --linger 20 --idempotence
+%3|1793121322.286|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121322.337|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121322.387|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121322.564|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121322.786|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121322.928|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121322.980|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121323.031|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121323.287|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121323.339|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121323.706|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121323.788|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121324.288|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121324.340|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121324.707|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121324.788|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121325.289|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+%3|1793121325.340|FAIL|lab05-productor#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)
+Traceback (most recent call last):
+  File "/home/est1/equipo02/kafka_dian/entorno/productor_facturacion.py", line 60, in <module>
+    main()
+  File "/home/est1/equipo02/kafka_dian/entorno/productor_facturacion.py", line 52, in main
+    p.produce(a.topic, key=k, value=json.dumps(v), callback=entregado)
+BufferError: Local: Queue full
+%4|1793121325.471|TERMINATE|lab05-productor#producer-1| [thrd:app]: Producer terminating with 100000 messages (17268018 bytes) still in queue or transit: use flush() to wait for outstanding message delivery
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ TOPIC_IDEM=$EQUIPO.lab05.idem
+docker exec broker1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker1:19092 --topic "$TOPIC_IDEM" --from-beginning --timeout-ms 20000 2>/dev/null \
+  | python3 -c "import sys,json; ids=[json.loads(l)['id_evento'] for l in sys.stdin if l.strip()]; print('total',len(ids),'unicos',len(set(ids)))"
+total 200000 unicos 200000
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker1:19092 --topic "$TOPIC" --from-beginning --timeout-ms 20000 2>/dev/null   | python3 -c "import sys,json; ids=[json.loads(l)['id_evento'] for l in sys.stdin if l.strip()]; print('total',len(ids),'unicos',len(set(ids)))"
+total 2856159 unicos 2856089
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker1:19092 --topic "$TOPIC_IDEM" --from-beginning --timeout-ms 20000 2>/dev/null \
+  | python3 -c "import sys,json; ids=[json.loads(l)['id_evento'] for l in sys.stdin if l.strip()]; print('total',len(ids),'unicos',len(set(ids)))"
+total 400000 unicos 400000
+
+Conteo del paso 5 y explicación
+
+En el paso 5 se activó la idempotencia para el envío de mensajes y se observa que en el TOPIC_IDEM no hay mensajes repetidos(total 400000 únicos 400000), pero al realizar la validación en el TOPIC después de realizar varios envíos de mensajes sin tener idempotencia si hay repetidos(total 2856159 únicos 2856089).
