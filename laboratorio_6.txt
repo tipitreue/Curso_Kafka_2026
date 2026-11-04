@@ -1,0 +1,166 @@
+laboratorio 6
+
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker compose -f docker-compose-lab-kafka.yml -f docker-compose.override.yml up -d
+[+] up 6/6
+ ✔ Container broker3          Healthy                                                                                                                                      11.2s
+ ✔ Container bootstrap-topics Running                                                                                                                                       0.0s
+ ✔ Container broker1          Healthy                                                                                                                                      11.2s
+ ✔ Container broker2          Healthy                                                                                                                                      11.2s
+ ✔ Container kafka-ui         Started                                                                                                                                      11.6s
+ ✔ Container postgres         Started 
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server broker1:19092 \
+  --create --topic "$TOPIC" --partitions 6 --replication-factor 3 --config min.insync.replicas=2
+WARNING: Due to limitations in metric names, topics with a period ('.') or underscore ('_') could collide. To avoid issues it is best to use either, but not both.
+Created topic equipo02.lab06-est1.facturacion.emitida.
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 gen_eventos.py --topic "$TOPIC" --n 500
+enviados: 500
+
+Paso 1:
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 consumidor_facturacion.py --topic "$TOPIC" --group "$GROUP"
+^C(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec -it postgres psql -U dian -c "SELECT count(*) FROM facturas;"
+ count 
+-------
+   500
+(1 row)
+
+Paso 2:
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec -it postgres psql -U dian -c "TRUNCATE facturas;"
+TRUNCATE TABLE
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server broker1:19092 --group "$GROUP" --topic "$TOPIC" --reset-offsets --to-earliest --execute
+
+GROUP                          TOPIC                          PARTITION  NEW-OFFSET     equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 4          0              equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 5          0              equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 2          0              equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 3          0              equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 0          0              equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 1          0
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 consumidor_facturacion.py --topic "$TOPIC" --group "$GROUP" --kill-after 60
+Simulando caída tras 60 mensajes, SIN commit
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 consumidor_facturacion.py --topic "$TOPIC" --group "$GROUP"
+[intento 1] p=2 o=59 error=UniqueViolation: duplicate key value violates unique constraint "facturas_pkey"
+DETAIL:  Key (id_evento)=(45433919-09c3-44ff-816a-e8836a52b21c) already exists.
+
+[intento 2] p=2 o=59 error=UniqueViolation: duplicate key value violates unique constraint "facturas_pkey"
+DETAIL:  Key (id_evento)=(45433919-09c3-44ff-816a-e8836a52b21c) already exists.
+
+[intento 3] p=2 o=59 error=UniqueViolation: duplicate key value violates unique constraint "facturas_pkey"
+DETAIL:  Key (id_evento)=(45433919-09c3-44ff-816a-e8836a52b21c) already exists.
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec -it postgres psql -U dian -c "SELECT count(*) total, count(DISTINCT id_evento) unicos FROM facturas;"
+ total | unicos 
+-------+--------
+   381 |    381
+(1 row)
+
+Paso 3
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec -it postgres psql -U dian -c "TRUNCATE facturas;"
+TRUNCATE TABLE
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec -it postgres psql -U dian -c "SELECT count(*) total, count(DISTINCT id_evento) unicos FROM facturas;"
+ total | unicos 
+-------+--------
+     0 |      0
+(1 row)
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server broker1:19092 --group "$GROUP" --topic "$TOPIC" --reset-offsets --to-earliest --execute
+
+GROUP                          TOPIC                          PARTITION  NEW-OFFSET     equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 4          0              equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 5          0              equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 2          0              equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 3          0              equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 0          0              equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 1          0 
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 consumidor_facturacion.py --topic "$TOPIC" --group "$GROUP" --upsert --kill-after 60
+Simulando caída tras 60 mensajes, SIN commit
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec -it postgres psql -U dian -c "SELECT count(*) total, count(DISTINCT id_evento) unicos FROM facturas;"
+ total | unicos 
+-------+--------
+   500 |    500
+(1 row)
+
+Paso 4
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ FECHA=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%S.000)
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server broker1:19092 --group "$GROUP" \
+  --topic "$TOPIC" --reset-offsets --to-datetime $FECHA --dry-run
+
+Warn: Partition 4 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+Warn: Partition 5 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+Warn: Partition 2 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+Warn: Partition 3 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+Warn: Partition 0 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+Warn: Partition 1 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+GROUP                          TOPIC                          PARTITION  NEW-OFFSET     equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 4          74             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 5          75             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 2          92             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 3          108            equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 0          80             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 1          71 
+
+GROUP                          TOPIC                          PARTITION  NEW-OFFSET     equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 4          74             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 5          75             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 2          92             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 3          108            equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 0          80             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 1          71             (.venv)
+
+Group	                                 Topic	                Partition	New-offset
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	    4	            74
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	    5	            75
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	    2	            92
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	    3	           108
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	    0	            80
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	    1	            71
+
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server broker1:19092 --group "$GROUP" \1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server broker1:19092 --group "$GROUP" \
+  --topic "$TOPIC" --reset-offsets --to-datetime $FECHA --execute
+
+Warn: Partition 4 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+Warn: Partition 5 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+Warn: Partition 2 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+Warn: Partition 3 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+Warn: Partition 0 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+Warn: Partition 1 from topic equipo02.lab06-est1.facturacion.emitida is empty. Falling back to latest known offset.
+
+GROUP                          TOPIC                          PARTITION  NEW-OFFSET     equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 4          74             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 5          75             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 2          92             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 3          108            equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 0          80             equipo02-lab06-sink            equipo02.lab06-est1.facturacion.emitida 1          71
+
+Group	                               Topic	                 Partition	New-offset
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	     4	            74
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	     5	            75
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	     2	            92
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	     3	           108
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	     0	            80
+equipo02-lab06-sink	equipo02.lab06-est1.facturacion.emitida	     1	            71
+
+Paso 5
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ echo '800999|{esto no es json' | docker exec -i broker1 /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server broker1:19092 \n/entorno$ echo '800999|{esto no es json' | docker exec -i broker1 /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server broker1:19092 \
+  --topic "$TOPIC" --property parse.key=true --property key.separator="|"
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 consumidor_facturacion.py --topic "$TOPIC" --group "$GROUP" --upsert
+[intento 1] p=1 o=71 error=JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+[intento 2] p=1 o=71 error=JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+[intento 3] p=1 o=71 error=JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+-> enviado a DLQ p=1 o=71
+
+Paso 6
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker1:19092 --topic "${TOPIC}.dlq" \
+  --from-beginning --timeout-ms 5000 --property print.headers=true --property print.key=true
+origen.topic:equipo02.lab06-est1.facturacion.emitida,origen.particion:1,origen.offset:72,error:procesamiento fallido tras reintentos,consumidor:lab06-v1,ts:1793722167  800999 {esto no es json
+[2026-11-03 16:10:04,536] ERROR Error processing message, terminating consumer process:  (org.apache.kafka.tools.consumer.ConsoleConsumer)
+org.apache.kafka.common.errors.TimeoutException
+Processed a total of 1 messages
+
+(a) explique con sus palabras por qué el paso 2 falló y el 3 no; El paso 2 falló porque se produjo una situación de procesamiento "al menos una vez" (at-least-once delivery) y el consumidor quedó atascado intentando reprocesar el mismo mensaje, generando una excepción en cada reintento, mientras que en el paso 3 se logró idempotencia, permitiendo reprocesar mensajes sin crear duplicados ni detener el flujo debido al comando upsert. 
+(b) ¿en qué caso preferiría "guardar el offset en el destino" en lugar del UPSERT?; Preferiría guardar el offset en el destino cuando:
+-El volumen de datos es muy alto.
+-Las operaciones UPSERT tienen un costo significativo.
+-Se quiere garantizar consistencia exacta entre los datos escritos y el progreso de consumo.
+-El sistema destino permite almacenar metadatos transaccionalmente. 
+(c) quién debería ser el responsable de la DLQ del flujo de facturación en la entidad y qué acuerdo de atención propondría. La responsabilidad principal de la DLQ  debería recaer sobre el equipo funcional dueño del proceso de facturación electrónica.
+
+
+
