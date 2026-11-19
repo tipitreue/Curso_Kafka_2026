@@ -1,0 +1,221 @@
+Informe laboratorio 8
+
+Se cambia el puerto en el archivo docker-compose: ports: ["8085:8080"]
+
+Se suben los servicios, entrada en el terminal:
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker compose -f docker-compose-lab-kafka.yml up -d
+
+Salida en el terminal:
+/tcp, 9092/tcp, 0.0.0.0:9102->9102/tcp, [::]:9102->9102/tcp   broker2
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker compose -f docker-compose-lab-kafka.yml up -d
+WARN[0000] Found orphan containers (postgres) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up. 
+[+] up 5/5
+ ✔ Container broker1          Healthy                                                                                                                      0.6s
+ ✔ Container broker2          Healthy                                                                                                                      0.6s
+ ✔ Container broker3          Healthy                                                                                                                      0.6s
+ ✔ Container kafka-ui         Running                                                                                                                      0.0s
+ ✔ Container bootstrap-topics Started 
+
+Se descarga el achivo etapa C y se modifica de acuerdo con las indicaciones dadas en la clase, posteriormente se ejecuta el siguiente comando:
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker compose -f docker-compose.etapaC.yml up -d
+
+Salida terminal:
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker compose -f docker-compose.etapaC.yml up -d
+WARN[0000] Found orphan containers (kafka-ui, bootstrap-topics, broker1, broker3, broker2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up. 
+[+] up 3/3
+ ✔ Container postgres        Started                                                                                                                       1.7s
+ ✔ Container schema-registry Started                                                                                                                       1.3s
+ ✔ Container connect         Started 
+
+Se ingresa en la terminal:
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ curl -s localhost:8081/subjects
+
+Salida en la terminal:
+[]estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ 
+
+Se instalan el resto de prerrequisitos
+estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ source .venv/bin/activate
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 -m pip install "confluent-kafka[avro,schemaregistry]"
+
+Paso 1:
+Se revisa el siguiente archivo:
+
+{
+  "type": "record",
+  "name": "DeclaracionPresentada",
+  "namespace": "gov.dian.tributaria",
+  "doc": "Evento emitido cuando un contribuyente presenta una declaración. Datos sintéticos para formación.",
+  "fields": [
+    {"name": "id_evento", "type": "string", "doc": "Identificador único del evento (UUID). Clave de idempotencia en los consumidores."},
+    {"name": "nit", "type": "string", "doc": "NIT del declarante, sin dígito de verificación. Clave de partición: conserva el orden por contribuyente."},
+    {"name": "formulario", "type": "string", "doc": "Código del formulario presentado (110, 300, 350, 490)."},
+    {"name": "periodo", "type": "string", "doc": "Periodo gravable en formato AAAA-MM."},
+    {"name": "fecha_presentacion", "type": {"type": "long", "logicalType": "timestamp-millis"}, "doc": "Momento de la presentación, en UTC."},
+    {"name": "valor_pagado", "type": {"type": "bytes", "logicalType": "decimal", "precision": 16, "scale": 2}, "doc": "Valor pagado en pesos colombianos."},
+    {"name": "estado", "type": {"type": "enum", "name": "EstadoDeclaracion", "symbols": ["PRESENTADA", "ANULADA", "CORREGIDA"]}, "doc": "Estado de la declaración al momento del evento."}
+  ]
+}
+
+¿qué impide el enum que un string permitiría? Impide que el dato ingresado sea cualquiera y se limite solo al conjunto cerrado definido y ocupa menos espacio.
+
+Paso 2:
+Ingreso en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ JSON=$(python3 -c "import json;print(json.dumps({'schema':open('declaracion-presen
+tada-v1.avsc').read()}))")
+
+Ingreso en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ curl -s -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json" \
+  --data "$JSON" http://localhost:8081/subjects/dian.declaracion.presentada-value/versions
+
+Salida en la terminal:
+{"id":1}(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$
+
+Ingreso terminal:
+["dian.declaracion.presentada-value"](.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ curl -s http://localhost:8081/subjects/dian.declaracion.presentada-value/versions
+
+Salida terminal:
+[1](.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno
+
+Ingreso terminal:
+[1](.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ curl -s http://localhost:8081/config/dian.declaracion.presentada-value
+
+Salida terminal:
+{"error_code":40408,"message":"Subject 'dian.declaracion.presentada-value' does not have subject-level compatibility configured"}(.venv)
+
+Ingreso terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ curl -s "http://localhost:8081/config/dian.declaracion.presentada-value?defaultToGlobal=true"e/est1/equipo02/kafka_dian/entorno$ curl -s "http://localhost:8081/config/dian.declaracion.presentada-value?defaultToGlobal=true"
+
+Salida terminal:
+{"compatibilityLevel":"BACKWARD"}(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$
+
+Paso 3
+
+Se descargan los archivos productor_avro y consumidor_avro para correrlos
+
+Ingreso en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 productor_avro.py --n 50
+
+Salida en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 productor_avro.py --n 50
+enviados: 50
+
+Ingreso en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 consumidor_avro.py --group "${EQUIPO}-lab08"
+
+Salida en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 consumidor_avro.py --group "${EQUIPO}-lab08"
+p=5 o=20 nit=867895643 form=350 valor=29685620.00 estado=CORREGIDA
+p=5 o=21 nit=891350939 form=110 valor=21156962.00 estado=CORREGIDA
+p=5 o=22 nit=824366777 form=490 valor=18431897.00 estado=PRESENTADA
+p=5 o=23 nit=850903464 form=110 valor=14831623.00 estado=CORREGIDA
+p=5 o=24 nit=898872941 form=350 valor=32255629.00 estado=CORREGIDA
+sin más mensajes (100 leídos)
+
+Paso 4
+
+Entrada en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker1:19092 \
+  --topic dian.declaracion.presentada --from-beginning --max-messages 1 | xxd | head -4
+
+Salida en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker exec broker1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker1:19092 \
+  --topic dian.declaracion.presentada --from-beginning --max-messages 1 | xxd | head -4
+Processed a total of 1 messages
+00000000: 0000 0000 0148 6535 6466 6137 3231 2d66  .....He5dfa721-f
+00000010: 3264 382d 3432 3962 2d39 6436 322d 3731  2d8-429b-9d62-71
+00000020: 3563 3764 3731 3239 6333 1238 3430 3035  5c7d7129c3.84005
+00000030: 3538 3533 0631 3130 0e32 3032 362d 3034  5853.110.2026-04
+
+Paso 5
+
+Entrada en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 productor_avro.py --n 5 --invalido
+
+Salida en la terminal
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 productor_avro.py --n 5 --invalido
+[RECHAZADO POR EL ESQUEMA] ValueError: 'EN_TRAMITE' is not in list
+enviados: 0
+
+Paso 6
+
+Entrada en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ curl -s http://localhost:8081/schemas/ids/1 | python3 -m json.tool | head -20
+
+Salida en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ curl -s http://localhost:8081/schemas/ids/1 | python3 -m json.tool | head -20
+{
+    "schema": "{\"type\":\"record\",\"name\":\"DeclaracionPresentada\",\"namespace\":\"gov.dian.tributaria\",\"doc\":\"Evento emitido cuando un contribuyente presenta una declaraci\u00f3n. Datos sint\u00e9ticos para formaci\u00f3n.\",\"fields\":[{\"name\":\"id_evento\",\"type\":\"string\",\"doc\":\"Identificador \u00fanico del evento (UUID). Clave de idempotencia en los consumidores.\"},{\"name\":\"nit\",\"type\":\"string\",\"doc\":\"NIT del declarante, sin d\u00edgito de verificaci\u00f3n. Clave de partici\u00f3n: conserva el orden por contribuyente.\"},{\"name\":\"formulario\",\"type\":\"string\",\"doc\":\"C\u00f3digo del formulario presentado (110, 300, 350, 490).\"},{\"name\":\"periodo\",\"type\":\"string\",\"doc\":\"Periodo gravable en formato AAAA-MM.\"},{\"name\":\"fecha_presentacion\",\"type\":{\"type\":\"long\",\"logicalType\":\"timestamp-millis\"},\"doc\":\"Momento de la presentaci\u00f3n, en UTC.\"},{\"name\":\"valor_pagado\",\"type\":{\"type\":\"bytes\",\"logicalType\":\"decimal\",\"precision\":16,\"scale\":2},\"doc\":\"Valor pagado en pesos colombianos.\"},{\"name\":\"estado\",\"type\":{\"type\":\"enum\",\"name\":\"EstadoDeclaracion\",\"symbols\":[\"PRESENTADA\",\"ANULADA\",\"CORREGIDA\"]},\"doc\":\"Estado de la declaraci\u00f3n al momento del evento.\"}]}"
+}
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ curl -s http://localhost:8081/schemas/ids/1 | python3 -c "import sys,json; print(json.dumps(json.loads(json.load(sys.stdin)['schema']), indent=2))"
+{
+  "type": "record",
+  "name": "DeclaracionPresentada",
+  "namespace": "gov.dian.tributaria",
+  "doc": "Evento emitido cuando un contribuyente presenta una declaraci\u00f3n. Datos sint\u00e9ticos para formaci\u00f3n.",
+  "fields": [
+    {
+      "name": "id_evento",
+      "type": "string",
+      "doc": "Identificador \u00fanico del evento (UUID). Clave de idempotencia en los consumidores."
+    },
+    {
+      "name": "nit",
+      "type": "string",
+      "doc": "NIT del declarante, sin d\u00edgito de verificaci\u00f3n. Clave de partici\u00f3n: conserva el orden por contribuyente."
+    },
+    {
+      "name": "formulario",
+      "type": "string",
+      "doc": "C\u00f3digo del formulario presentado (110, 300, 350, 490)."
+    },
+    {
+      "name": "periodo",
+      "type": "string",
+      "doc": "Periodo gravable en formato AAAA-MM."
+    },
+    {
+      "name": "fecha_presentacion",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Momento de la presentaci\u00f3n, en UTC."
+    },
+    {
+      "name": "valor_pagado",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 16,
+        "scale": 2
+      },
+      "doc": "Valor pagado en pesos colombianos."
+    },
+    {
+      "name": "estado",
+      "type": {
+        "type": "enum",
+        "name": "EstadoDeclaracion",
+        "symbols": [
+          "PRESENTADA",
+          "ANULADA",
+          "CORREGIDA"
+        ]
+      },
+      "doc": "Estado de la declaraci\u00f3n al momento del evento."
+    }
+  ]
+}
+
+¿por qué solo viaja el ID? Porque se esa forma no se reenvía el esquema varias veces al enviar la información en forma binaria y el consumidor con el id puede leer la información recibida.
+¿qué habría pasado en la sesión 7, con JSON sin esquema, al producir EN_TRAMITE? Se hubiese podido procesar y guardar, de esta forma habría posibilidad de guardar información errada al no haber contrato.
+proponga dos campos que agregaría al esquema para su propio dominio y redacte su doc
+{
+      "name": "ReteFuente",
+      "doc": "Valor de lo retenido en el período declarado."
+
+{
+      "name": "Anticipo",
+      "doc": "Valor del anticipo dejado para el próximo período"
+}
