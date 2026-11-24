@@ -1,0 +1,233 @@
+Informe-laboratorio 7
+
+Prerrequisitos
+
+-Entradas(Esta configuración se hace en las seis terminales del laboratorio):
+
+ cd /home/est1/equipo02/kafka_dian/entorno
+ docker compose -f docker-compose-lab-kafka.yml -f docker-compose.override.yml up -d
+ docker ps
+ source .venv/bin/activate
+ EQUIPO=equipo02
+ TOPIC=$EQUIPO.lab05-est1.facturacion.emitida
+ GROUP=${EQUIPO}-lab07-est1
+ alias kg='docker exec broker1 /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server broker1:19092'
+
+-Ejecución en la terminal:
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker compose -f docker-compose-lab-kafka.yml -f docker-compose.override.yml up -d
+[+] up 6/6
+ ✔ Container broker2          Healthy                                                                                  0.6s
+ ✔ Container broker3          Healthy                                                                                  0.6s
+ ✔ Container kafka-ui         Running                                                                                  0.0s
+ ✔ Container broker1          Healthy                                                                                  0.6s
+ ✔ Container postgres         Started                                                                                  0.4s
+ ✔ Container bootstrap-topics Started
+
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ docker ps
+CONTAINER ID   IMAGE                            COMMAND                  CREATED       STATUS                       PORTS                                                                                                NAMES
+e153a996fd58   postgres:16                      "docker-entrypoint.s…"   4 days ago    Up About a minute            0.0.0.0:5433->5432/tcp, [::]:5433->5432/tcp                                                          postgres
+e7825cee0fee   ghcr.io/kafbat/kafka-ui:v1.1.0   "/bin/sh -c 'java --…"   7 days ago    Up About an hour             0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp                                                          kafka-ui
+234a4a16abbf   apache/kafka:3.9.0               "/__cacert_entrypoin…"   7 weeks ago   Up About an hour (healthy)   0.0.0.0:9092->9092/tcp, [::]:9092->9092/tcp, 0.0.0.0:9101->9101/tcp, [::]:9101->9101/tcp             broker1
+880a07e8ac8a   apache/kafka:3.9.0               "/__cacert_entrypoin…"   7 weeks ago   Up About an hour (healthy)   0.0.0.0:9096->9096/tcp, [::]:9096->9096/tcp, 9092/tcp, 0.0.0.0:9103->9103/tcp, [::]:9103->9103/tcp   broker3
+df0a52f1eb8f   apache/kafka:3.9.0               "/__cacert_entrypoin…"   7 weeks ago   Up About an hour (healthy)   0.0.0.0:9094->9094/tcp, [::]:9094->9094/tcp, 9092/tcp, 0.0.0.0:9102->9102/tcp, [::]:9102->9102/tcp   broker2
+ 
+ estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ source .venv/bin/activate
+ estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ EQUIPO=equipo02
+ estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ TOPIC=$EQUIPO.lab05-est1.facturacion.emitida
+ estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ GROUP=${EQUIPO}-lab07
+ estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ alias kg='docker exec broker1 /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server  broker1:19092'
+
+Paso 1:
+
+-Entrada en la primera terminal (A):
+ python3 gen_eventos.py --topic "$TOPIC" --rate 500 --minutes 12
+
+-Ejecución en la terminal y salida:
+ (.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ python3 gen_eventos.py --topic "$TOPIC" --rate 500 --minutes 12
+enviados: 326828
+
+Paso 2:
+
+-Entrada en la segunda terminal (B):
+ SLEEP_MS=5 python3 consumidor_facturacion.py -
+ -topic "$TOPIC" --group "$GROUP" --upsert
+
+-Entrada en la tercera terminal (C):
+ for i in $(seq 1 6); do date +%T; kg --describe --group "$GROUP" | awk 'NR>1 {lag+=$6} END {print "LAG TOTAL:", lag}'; sleep 30; done 
+
+-Ejecución en la terminal y salida:
+ (.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ for i in $(seq 1 6); do date +%T; kg --describe --group "$GROUP" | awk 'NR>1 {lag+=$6} END {print "LAG TOTAL:", lag}'; sleep 30; done
+15:06:24
+LAG TOTAL: 671449
+15:07:00
+LAG TOTAL: 682369
+15:07:35
+LAG TOTAL: 693348
+15:08:11
+LAG TOTAL: 703779
+15:08:45
+LAG TOTAL: 714533
+15:09:20
+LAG TOTAL: 725205
+
+Paso 3:
+
+Entrada en la terminal D:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kg --describe --group "$GROUP"
+
+Entrada en la terminal E:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ SLEEP_MS=5 python3 consumidor_facturacion.py --topic "$TOPIC" --group "$GROUP" --upsert
+
+Salida en la terminal E:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kg --describe --group "$GROUP"
+
+GROUP           TOPIC                                   PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                  HOST            CLIENT-ID
+equipo02-lab07  equipo02.lab05-est1.facturacion.emitida 5          623488          883187          259699          rdkafka-55c49039-9d75-4e57-a760-a991d29f6fcd /172.18.0.1     rdkafka
+equipo02-lab07  equipo02.lab05-est1.facturacion.emitida 4          650256          851822          201566          rdkafka-55c49039-9d75-4e57-a760-a991d29f6fcd /172.18.0.1     rdkafka
+equipo02-lab07  equipo02.lab05-est1.facturacion.emitida 3          628087          856833          228746          rdkafka-55c49039-9d75-4e57-a760-a991d29f6fcd /172.18.0.1     rdkafka
+equipo02-lab07  equipo02.lab05-est1.facturacion.emitida 2          662038          904820          242782          rdkafka-55c49039-9d75-4e57-a760-a991d29f6fcd /172.18.0.1     rdkafka
+equipo02-lab07  equipo02.lab05-est1.facturacion.emitida 1          653845          888692          234847          rdkafka-55c49039-9d75-4e57-a760-a991d29f6fcd /172.18.0.1     rdkafka
+equipo02-lab07  equipo02.lab05-est1.facturacion.emitida 0          646339          864296          217957          rdkafka-55c49039-9d75-4e57-a760-a991d29f6fcd /172.18.0.1     rdkafka
+equipo02-lab07  equipo02.lab05.facturacion.emitida      2          145149          228278          83129           rdkafka-9ec73184-c80f-41ff-9857-4e7e596e53fb /172.18.0.1     rdkafka
+equipo02-lab07  equipo02.lab05.facturacion.emitida      1          112079          237734          125655          rdkafka-9ec73184-c80f-41ff-9857-4e7e596e53fb /172.18.0.1     rdkafka
+equipo02-lab07  equipo02.lab05.facturacion.emitida      0          95685           259491          163806          rdkafka-9ec73184-c80f-41ff-9857-4e7e596e53fb /172.18.0.1     rdkafka
+equipo02-lab07  equipo02.lab05.facturacion.emitida      5          86276           245578          159302          rdkafka-f71a5452-c9f8-45f2-a726-eea9cf0d615e /172.18.0.1     rdkafka
+equipo02-lab07  equipo02.lab05.facturacion.emitida      4          94971           253852          158881          rdkafka-f71a5452-c9f8-45f2-a726-eea9cf0d615e /172.18.0.1     rdkafka
+equipo02-lab07  equipo02.lab05.facturacion.emitida      3          86278           256727          170449          rdkafka-f71a5452-c9f8-45f2-a726-eea9cf0d615e /172.18.0.1     rdkafka(.venv)
+
+Entrada en la terminal E:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ for i in $(seq 1 6); do date +%T; kg --describe --group "$GROUP" | awk 'NR>1 {lag+=$6} END {print "LAG TOTAL:", lag}'; sleep 30; done
+
+Salida en la terminal E:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ for i in $(seq 1 6); do date +%T; kg --describe --group "$GROUP" | awk 'NR>1 {lag+=$6} END {print "LAG TOTAL:", lag}'; sleep 30; done
+13:26:51
+LAG TOTAL: 2278781
+13:27:27
+LAG TOTAL: 2283069
+13:28:07
+LAG TOTAL: 2284655
+13:28:43
+LAG TOTAL: 2282233
+13:29:17
+LAG TOTAL: 2266322
+13:29:52
+LAG TOTAL: 2248631
+
+Se crean otros tres consumidores y se mide el Lag en otra terminal y se ingresa lo siguiente:
+.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ for i in $(seq 1 6); do date +%T; kg --describe --group "$GROUP" | awk 'NR>1 {lag+=$6} END {print "LAG TOTAL:", lag}'; sleep 30; done
+
+La salida en esta terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ for i in $(seq 1 6); do date +%T; kg --describe --group "$GROUP" | awk 'NR>1 {lag+=$6} END {print "LAG TOTAL:", lag}'; sleep 30; done
+13:36:53
+LAG TOTAL: 2049796
+13:37:29
+LAG TOTAL: 2032673
+13:38:03
+LAG TOTAL: 2016669
+13:38:37
+LAG TOTAL: 1999147
+13:39:12
+LAG TOTAL: 1981386
+13:39:46
+LAG TOTAL: 1964395
+
+
+Paso 4:
+Ingreso en la última terminal que se abrió:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kg --describe --group "$GROUP" --members --verbose
+
+Salida en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kg --describe --group "$GROUP" --members --verbose
+
+GROUP           CONSUMER-ID                                  HOST            CLIENT-ID       #PARTITIONS     ASSIGNMENT
+equipo02-lab07  rdkafka-9ec73184-c80f-41ff-9857-4e7e596e53fb /172.18.0.1     rdkafka         3               (0,1,2)
+equipo02-lab07  rdkafka-e2bcbfd1-fada-418e-84a4-cb52e88ffdff /172.18.0.1     rdkafka         6               (0,1,2,3,4,5)
+equipo02-lab07  rdkafka-f71a5452-c9f8-45f2-a726-eea9cf0d615e /172.18.0.1     rdkafka         3               (3,4,5)
+
+Se crea otro consumidor y se ejecuta de nuevo en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kg --describe --group "$GROUP" --members --verbose
+
+Salida en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kg --describe --group "$GROUP" --members --verbose
+
+GROUP           CONSUMER-ID                                  HOST            CLIENT-ID       #PARTITIONS     ASSIGNMENT
+equipo02-lab07  rdkafka-53743608-f88d-4cb0-b37c-712002b06e85 /172.18.0.1     rdkafka         6               (0,1,2,3,4,5)
+
+Paso 5:
+Se hace el cambio en la línea 28 del archivo consumidor_facturacion.py: partition.assignment.strategy=range, se abren otras tres terminales para hacer tres consumidores y posteriormente se mide el lag. La entrada en los tres consumidores:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ SLEEP_MS=5 python3 consumidor_facturacion.py --topic "$TOPIC" --group "$GROUP" --upsert
+
+Se hace en otra terminal la medición del lag, digitando lo siguiente:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ SLEEP_MS=5 python3 consumidor_facturacion.py --topic "$TOPIC" --group "$GROUP" --upsert
+
+La salida en la terminal es:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ for i in $(seq 1 6); do date +%T; kg --describe --group "$GROUP" | awk 'NR>1 {lag+=$6} END {print "LAG TOTAL:", lag}'; sleep 30; done
+13:55:50
+LAG TOTAL: 1633793
+13:56:24
+LAG TOTAL: 1610497
+13:56:59
+LAG TOTAL: 1586601
+13:57:35
+LAG TOTAL: 1563669
+13:58:10
+LAG TOTAL: 1540899
+13:58:44
+LAG TOTAL: 1517294
+
+Entrada en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kg --describe --group "$GROUP" --members --verbose
+
+Salida en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ kg --describe --group "$GROUP" --members --verbose
+
+GROUP           CONSUMER-ID                                  HOST            CLIENT-ID       #PARTITIONS     ASSIGNMENT
+equipo02-lab07  rdkafka-9face590-dcdf-45a2-a5e1-6ae92220a8a7 /172.18.0.1     rdkafka         1               (4)
+equipo02-lab07  rdkafka-ab05f235-a518-4ae4-bad6-cb910d4147e0 /172.18.0.1     rdkafka         6               (0,1,2,3,4,5)
+equipo02-lab07  rdkafka-e409f87d-15a6-41ec-83c6-3eb3f21f3ad2 /172.18.0.1     rdkafka         1               (5)
+equipo02-lab07  rdkafka-4dc46276-6714-4b0f-8c33-68538f02ef70 /172.18.0.1     rdkafka         2               (0,1)
+equipo02-lab07  rdkafka-926e4081-f076-443d-8f62-264b4e43ccb3 /172.18.0.1     rdkafka         2               (2,3)
+
+Se hace el cambio en la línea 28 del archivo consumidor_facturacion.py: "partition.assignment.strategy": "cooperative-sticky", y se procesa en los tres terminales, después de cambiar el grupo porque no ejecutaba:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ SLEEP_MS=5 python3 consumidor_facturacion.py --topic "$TOPIC" --group "$GROUP" --upsert
+
+Se mide el lag de nuevo, entrada en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ for i in $(seq 1 6); do date +%T; kg --describe --group "$GROUP" | awk 'NR>1 {lag+=$6} END {print "LAG TOTAL:", lag}'; sleep 30; done
+
+Salida de la medición del lag:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ for i in $(seq 1 6); do date +%T; kg --describe --group "$GROUP" | awk 'NR>1 {lag+=$6} END {print "LAG TOTAL:", lag}'; sleep 30; done
+14:26:54
+LAG TOTAL: 435114
+14:27:28
+LAG TOTAL: 430051
+14:28:05
+LAG TOTAL: 872138
+14:28:42
+LAG TOTAL: 868047
+14:29:17
+LAG TOTAL: 863353
+14:29:53
+LAG TOTAL: 858554
+
+Paso 6:
+Se abre otra terminal para configurar otro consumidor, entrada en la terminal:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ SLEEP_MS=400000 python3 consumidor_facturacion
+.py --topic "$TOPIC" --group "$GROUP" --upsert
+
+El consumidor sigue consumiendo pero en ningún momento lo para. Se cambia el "max.poll.interval.ms": 100000, pero igual sigue corriendo, se ingresa el siguiente comando:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ for p in $(pgrep -f consumidor_facturacion); do echo "PID $p:"; tr '\0' '\n' < /proc/$p/environ | grep SLEEP || echo "   (sin SLEEP_MS)"; done
+
+La salida es la siguiente:
+(.venv) estudiante@ip-192-168-166-25:/home/est1/equipo02/kafka_dian/entorno$ for p in $(pgrep -f consumidor_facturacion); do echo "PID $p:"; tr '\0' '\n' < /proc/$p/environ | grep SLEEP || echo "   (sin SLEEP_MS)"; done
+PID 465629:
+SLEEP_MS=400000
+PID 471588:
+SLEEP_MS=400000
+
+Log del ciclo de expulsión y la corrección aplicada; explique por qué elevar max.poll.interval.ms no era la solución correcta.
+Kafka expulsa un consumidor cuando este supera el tiempo máximo permitido entre llamadas a poll(), inicialmente se pensó que aumentar este valor solucionaría el problema. Sin embargo, esto no corrige la causa raíz. El problema real era que el consumidor estaba tardando demasiado en procesar cada lote debido al retardo artificial introducido. Al aumentar max.poll.interval.ms, únicamente se le concede más tiempo al consumidor antes de ser expulsado, pero el procesamiento continúa siendo lento.
+
+Relación con un flujo de su dependencia: ¿cuántas particiones y consumidores propondría y qué umbral de lag alertaría?
+Propondría una configuración que permita crecer sin necesidad de cambios frecuentes.
+Propondría 6 particiones y 3 consumidores, con posibilidad de crecer hasta 6 consumidores si aumenta la carga. Además, configuraría alertas cuando el lag supere 100.000 mensajes y una alerta crítica cuando alcance 500.000 mensajes, ya que en el laboratorio se observó que valores cercanos o superiores a millones de mensajes representan un atraso importante en el consumo.
